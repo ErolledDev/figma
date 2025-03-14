@@ -24,17 +24,45 @@ export const WidgetSettings = () => {
 
   const loadSettings = async () => {
     try {
-      const { data: business } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: businesses, error } = await supabase
         .from('businesses')
         .select('*')
-        .single();
+        .eq('user_id', user.id)
+        .limit(1);
 
-      if (business) {
+      if (error) throw error;
+
+      if (businesses && businesses.length > 0) {
+        const business = businesses[0];
         setBusinessId(business.id);
         setValue('business_name', business.business_name);
         setValue('representative_name', business.representative_name);
         setValue('quick_questions', business.quick_questions);
         setValue('widget_color', business.widget_color);
+      } else {
+        // Create new business if none exists
+        const { data: newBusiness, error: createError } = await supabase
+          .from('businesses')
+          .insert({
+            user_id: user.id,
+            business_name: 'My Business', // Default name
+            representative_name: 'Representative', // Default name
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        
+        if (newBusiness) {
+          setBusinessId(newBusiness.id);
+          setValue('business_name', newBusiness.business_name);
+          setValue('representative_name', newBusiness.representative_name);
+          setValue('quick_questions', newBusiness.quick_questions || []);
+          setValue('widget_color', newBusiness.widget_color || '#33475b');
+        }
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -46,21 +74,14 @@ export const WidgetSettings = () => {
   const onSubmit = async (data: WidgetSettings) => {
     try {
       if (businessId) {
-        await supabase
+        const { error } = await supabase
           .from('businesses')
           .update(data)
           .eq('id', businessId);
-      } else {
-        const { data: { user } } = await supabase.auth.getUser();
-        await supabase
-          .from('businesses')
-          .insert({
-            ...data,
-            user_id: user?.id,
-          });
+
+        if (error) throw error;
+        alert('Settings saved successfully!');
       }
-      
-      alert('Settings saved successfully!');
     } catch (error) {
       console.error('Error saving settings:', error);
       alert('Error saving settings');

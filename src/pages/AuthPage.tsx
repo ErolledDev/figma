@@ -1,17 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
+import { useAuth } from '../hooks/useAuth';
 
 export const AuthPage = () => {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (session) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [session, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +27,10 @@ export const AuthPage = () => {
     setError(null);
 
     try {
+      let authResponse;
+      
       if (isSignUp) {
-        const { error: signUpError } = await supabase.auth.signUp({ 
+        authResponse = await supabase.auth.signUp({ 
           email, 
           password,
           options: {
@@ -28,44 +38,33 @@ export const AuthPage = () => {
           }
         });
 
-        if (signUpError) {
-          if (signUpError.message === 'User already registered') {
+        if (authResponse.error) {
+          if (authResponse.error.message === 'User already registered') {
             setError('An account with this email already exists. Please sign in instead.');
           } else {
-            setError(signUpError.message);
+            setError(authResponse.error.message);
           }
-          return;
-        }
-
-        // If sign up is successful, automatically try to sign in
-        const { error: signInError } = await supabase.auth.signInWithPassword({ 
-          email, 
-          password 
-        });
-
-        if (signInError) {
-          setError(signInError.message);
-          return;
-        }
-
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({ 
-          email, 
-          password 
-        });
-
-        if (signInError) {
-          if (signInError.message === 'Invalid login credentials') {
-            setError('Incorrect email or password. Please try again.');
-          } else {
-            setError(signInError.message);
-          }
+          setLoading(false);
           return;
         }
       }
 
-      // If we get here, authentication was successful
-      navigate('/dashboard');
+      // Always attempt to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+
+      if (signInError) {
+        if (signInError.message === 'Invalid login credentials') {
+          setError('Incorrect email or password. Please try again.');
+        } else {
+          setError(signInError.message);
+        }
+        setLoading(false);
+        return;
+      }
+
     } catch (err: any) {
       setError('An unexpected error occurred. Please try again.');
       console.error('Auth error:', err);
@@ -73,6 +72,11 @@ export const AuthPage = () => {
       setLoading(false);
     }
   };
+
+  // If already authenticated, redirect to dashboard
+  if (session) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">

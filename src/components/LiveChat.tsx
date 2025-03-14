@@ -23,22 +23,54 @@ export const LiveChat = () => {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [businessId, setBusinessId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadChatSessions();
-    subscribeToNewSessions();
-    subscribeToNewMessages();
+    initializeBusiness();
   }, []);
 
-  const loadChatSessions = async () => {
+  const initializeBusiness = async () => {
     try {
-      const { data: businessData } = await supabase
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Try to get existing business
+      const { data: businesses } = await supabase
         .from('businesses')
         .select('id')
-        .single();
+        .eq('user_id', user.id);
 
-      if (!businessData) return;
+      if (businesses && businesses.length > 0) {
+        setBusinessId(businesses[0].id);
+        await loadChatSessions(businesses[0].id);
+      } else {
+        // Create new business if none exists
+        const { data: newBusiness, error: createError } = await supabase
+          .from('businesses')
+          .insert({
+            user_id: user.id,
+            business_name: 'My Business', // Default name
+            representative_name: 'Representative', // Default name
+          })
+          .select('id')
+          .single();
 
+        if (createError) throw createError;
+        if (newBusiness) {
+          setBusinessId(newBusiness.id);
+          await loadChatSessions(newBusiness.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error initializing business:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadChatSessions = async (businessId: string) => {
+    try {
       const { data: sessions } = await supabase
         .from('chat_sessions')
         .select(`
@@ -52,14 +84,12 @@ export const LiveChat = () => {
             created_at
           )
         `)
-        .eq('business_id', businessData.id)
+        .eq('business_id', businessId)
         .order('created_at', { ascending: false });
 
       setSessions(sessions || []);
     } catch (error) {
       console.error('Error loading chat sessions:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
